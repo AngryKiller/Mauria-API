@@ -10,8 +10,6 @@
 
 import { SessionManager } from "../../aurion/utils/session-manager";
 
-export const BASE = "https://aurion.junia.com";
-
 /** "Les plannings" then "Plannings Groupés par Promotion". */
 export const ROOT_CHAIN = ["3131476", "7465293"];
 
@@ -26,8 +24,8 @@ export type Session = InstanceType<typeof SessionManager>;
  */
 const REQUEST_TIMEOUT_MS = 30_000;
 
-export function newSession(): Session {
-    const session = new SessionManager();
+export function newSession(baseUrl?: string): Session {
+    const session = new SessionManager(baseUrl);
     // extend() widens the client's option type, but the instance is the same
     // got client with the same defaults plus a timeout.
     session.client = session.client.extend({
@@ -113,9 +111,10 @@ export function formFields(body: string): URLSearchParams {
 
 /** A freshly loaded MainMenuPage: the menu state lives on the server. */
 export async function openMenu(session: Session): Promise<MenuPage> {
-    await session.client.get(`${BASE}/`, { responseType: "text" });
-    const page = await session.client.get(`${BASE}/faces/MainMenuPage.xhtml`, {
-        headers: { Referer: `${BASE}/` },
+    const base = session.baseUrl;
+    await session.client.get(`${base}/`, { responseType: "text" });
+    const page = await session.client.get(`${base}/faces/MainMenuPage.xhtml`, {
+        headers: { Referer: `${base}/` },
         responseType: "text",
     });
     return {
@@ -156,7 +155,7 @@ export async function expand(
         });
 
         const res = await session.client.post(
-            `${BASE}/faces/MainMenuPage.xhtml`,
+            `${session.baseUrl}/faces/MainMenuPage.xhtml`,
             { body: ajax.toString(), responseType: "text" }
         );
         if (res.body.includes("<error-name>")) {
@@ -191,15 +190,16 @@ export async function openLeaf(
         "form:sidebar": "form:sidebar",
         "form:sidebar_menuid": menuid,
     });
+    const base = session.baseUrl;
     const posted = await session.client.post(
-        `${BASE}/faces/MainMenuPage.xhtml`,
+        `${base}/faces/MainMenuPage.xhtml`,
         { body: payload.toString(), responseType: "text" }
     );
     const url = posted.headers.location
-        ? new URL(posted.headers.location, BASE).toString()
-        : `${BASE}/faces/ChoixPlanning.xhtml`;
+        ? new URL(posted.headers.location, base).toString()
+        : `${base}/faces/ChoixPlanning.xhtml`;
     const page = await session.client.get(url, {
-        headers: { Referer: `${BASE}/faces/MainMenuPage.xhtml` },
+        headers: { Referer: `${base}/faces/MainMenuPage.xhtml` },
         responseType: "text",
     });
     return { url, body: page.body };

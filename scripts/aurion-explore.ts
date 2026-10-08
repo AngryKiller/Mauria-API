@@ -12,11 +12,14 @@
 import { writeFileSync } from "fs";
 import { join } from "path";
 import dotenv from "dotenv";
-import { SessionManager } from "../src/routes/aurion/utils/session-manager";
+import {
+    DEFAULT_AURION_URL,
+    SessionManager,
+} from "../src/routes/aurion/utils/session-manager";
 
 dotenv.config({ path: ".env.dev" });
 
-const BASE = "https://aurion.junia.com";
+const BASE = DEFAULT_AURION_URL;
 const DUMPS = join(__dirname, "dumps");
 
 type MenuEntry = { id: string; label: string; kind: "item" | "submenu" };

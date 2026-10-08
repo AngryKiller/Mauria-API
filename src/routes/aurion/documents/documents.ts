@@ -31,7 +31,6 @@ export type DocumentsResult = {
     documents: AurionDocumentEntry[];
 };
 
-const BASE = "https://aurion.junia.com";
 const DOC_SUBMENU_ID = "1328656";
 
 // Sidebar entries that are always present but not document leaves.
@@ -227,11 +226,11 @@ function parseDetailPageDocument(
     return null;
 }
 
-function parseFormAction(html: string): string {
+function parseFormAction(html: string, baseUrl: string): string {
     const match = html.match(/<form[^>]*id="form"[^>]*action="([^"]+)"/);
     return match?.[1]
-        ? new URL(match[1], BASE).toString()
-        : `${BASE}/faces/ChoixGmcc.xhtml`;
+        ? new URL(match[1], baseUrl).toString()
+        : `${baseUrl}/faces/ChoixGmcc.xhtml`;
 }
 
 function extractHiddenInputs(html: string): URLSearchParams {
@@ -266,9 +265,10 @@ export class AurionDocuments {
 
     /** Open the "Mes Documents" submenu, return the partial AJAX body. */
     private async openDocsSubmenu(): Promise<string> {
+        const base = this.sessionManager.baseUrl;
         const menuPage = await this.sessionManager.client.get(
-            `${BASE}/faces/MainMenuPage.xhtml`,
-            { headers: { Referer: `${BASE}/` }, responseType: "text" }
+            `${base}/faces/MainMenuPage.xhtml`,
+            { headers: { Referer: `${base}/` }, responseType: "text" }
         );
         this.viewState =
             PageParser.parseViewState(menuPage.body) || this.viewState;
@@ -289,7 +289,7 @@ export class AurionDocuments {
         }).toString();
 
         const res = await this.sessionManager.client.post(
-            `${BASE}/faces/MainMenuPage.xhtml`,
+            `${base}/faces/MainMenuPage.xhtml`,
             { body: ajax, responseType: "text" }
         );
         this.viewState = parsePartialViewState(res.body) || this.viewState;
@@ -300,6 +300,7 @@ export class AurionDocuments {
     private async openLeaf(menuid: string): Promise<string> {
         // ViewStates are single-use: reload the submenu before each leaf.
         await this.openDocsSubmenu();
+        const base = this.sessionManager.baseUrl;
 
         const payload = new URLSearchParams({
             form: "form",
@@ -312,15 +313,15 @@ export class AurionDocuments {
         }).toString();
 
         const post = await this.sessionManager.client.post(
-            `${BASE}/faces/MainMenuPage.xhtml`,
+            `${base}/faces/MainMenuPage.xhtml`,
             { body: payload, responseType: "text" }
         );
 
         const target = post.headers.location
-            ? new URL(post.headers.location, BASE).toString()
-            : `${BASE}/faces/ChoixGmcc.xhtml`;
+            ? new URL(post.headers.location, base).toString()
+            : `${base}/faces/ChoixGmcc.xhtml`;
 
-        return this.followTo(target, `${BASE}/faces/MainMenuPage.xhtml`);
+        return this.followTo(target, `${base}/faces/MainMenuPage.xhtml`);
     }
 
     private async followTo(
@@ -434,7 +435,8 @@ export class AurionDocuments {
         consulterParam: string
     ): Promise<string> {
         const viewState = PageParser.parseViewState(leafHtml);
-        const formAction = parseFormAction(leafHtml);
+        const base = this.sessionManager.baseUrl;
+        const formAction = parseFormAction(leafHtml, base);
 
         const fields = extractHiddenInputs(leafHtml);
         fields.set(consulterParam, consulterParam);
@@ -446,7 +448,7 @@ export class AurionDocuments {
         });
 
         if (post.statusCode === 302 && post.headers.location) {
-            const target = new URL(post.headers.location, BASE).toString();
+            const target = new URL(post.headers.location, base).toString();
             return this.followTo(target, formAction);
         }
         return post.body;
@@ -500,7 +502,10 @@ export class AurionDocuments {
         submitParam: string
     ): Promise<{ buffer: Buffer; filename: string }> {
         const viewState = PageParser.parseViewState(html);
-        const formAction = parseFormAction(html);
+        const formAction = parseFormAction(
+            html,
+            this.sessionManager.baseUrl
+        );
 
         // Recover the filename from the grid.
         const linkRe =
@@ -528,7 +533,10 @@ export class AurionDocuments {
         downloadButtonParam: string
     ): Promise<{ buffer: Buffer; filename: string }> {
         const viewState = PageParser.parseViewState(html);
-        const formAction = parseFormAction(html);
+        const formAction = parseFormAction(
+            html,
+            this.sessionManager.baseUrl
+        );
 
         // Recover the filename from the matching <option>.
         const filename =

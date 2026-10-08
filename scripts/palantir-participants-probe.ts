@@ -25,7 +25,6 @@ import * as fs from "fs";
 import * as path from "path";
 import dotenv from "dotenv";
 import {
-    BASE,
     MenuPage,
     ROOT_CHAIN,
     expand,
@@ -155,8 +154,8 @@ async function main() {
         responseType: "text",
     });
     const planningUrl = shown.headers.location
-        ? new URL(shown.headers.location, BASE).toString()
-        : `${BASE}/faces/Planning.xhtml`;
+        ? new URL(shown.headers.location, session.baseUrl).toString()
+        : `${session.baseUrl}/faces/Planning.xhtml`;
     const planning = await session.client.get(planningUrl, {
         headers: { Referer: choice.url },
         responseType: "text",

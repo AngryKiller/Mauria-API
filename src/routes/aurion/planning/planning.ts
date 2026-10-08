@@ -21,10 +21,10 @@ export class AurionPlanning {
 
     async postMainSidebar() {
         const getSidebarMenuId = await this.sessionManager.client.get(
-            "https://aurion.junia.com/faces/MainMenuPage.xhtml",
+            `${this.sessionManager.baseUrl}/faces/MainMenuPage.xhtml`,
             {
                 headers: {
-                    Referer: "https://aurion.junia.com/",
+                    Referer: `${this.sessionManager.baseUrl}/`,
                     Connection: "keep-alive",
                 },
                 responseType: "text",
@@ -48,7 +48,7 @@ export class AurionPlanning {
         }).toString();
 
         await this.sessionManager.client.post(
-            "https://aurion.junia.com/faces/MainMenuPage.xhtml",
+            `${this.sessionManager.baseUrl}/faces/MainMenuPage.xhtml`,
             {
                 body: postData,
                 headers: {
@@ -59,11 +59,11 @@ export class AurionPlanning {
         );
 
         const getRes = await this.sessionManager.client.get(
-            "https://aurion.junia.com/faces/Planning.xhtml",
+            `${this.sessionManager.baseUrl}/faces/Planning.xhtml`,
             {
                 headers: {
                     Referer:
-                        "https://aurion.junia.com/faces/MainMenuPage.xhtml",
+                        `${this.sessionManager.baseUrl}/faces/MainMenuPage.xhtml`,
                     Connection: "keep-alive",
                 },
                 responseType: "text",
@@ -104,7 +104,7 @@ export class AurionPlanning {
         }).toString();
 
         const res = await this.sessionManager.client.post(
-            "https://aurion.junia.com/faces/Planning.xhtml",
+            `${this.sessionManager.baseUrl}/faces/Planning.xhtml`,
             {
                 body: postData,
                 headers: {

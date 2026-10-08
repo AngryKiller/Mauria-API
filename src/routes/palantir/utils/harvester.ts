@@ -8,7 +8,6 @@
  */
 
 import {
-    BASE,
     MenuPage,
     ROOT_CHAIN,
     Session,
@@ -275,8 +274,8 @@ async function openGroupPlanning(
         responseType: "text",
     });
     const url = shown.headers.location
-        ? new URL(shown.headers.location, BASE).toString()
-        : `${BASE}/faces/Planning.xhtml`;
+        ? new URL(shown.headers.location, session.baseUrl).toString()
+        : `${session.baseUrl}/faces/Planning.xhtml`;
     const planning = await session.client.get(url, {
         headers: { Referer: choiceUrl },
         responseType: "text",
