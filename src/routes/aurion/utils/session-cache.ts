@@ -1,5 +1,6 @@
 /**
- * In-memory cache of authenticated Aurion sessions, keyed by email.
+ * In-memory cache of authenticated Aurion sessions, keyed by Aurion URL and
+ * email (see SessionManager.cacheKey).
  *
  * A login plus a home-page load costs several seconds on Aurion's side, so
  * authenticated sessions (the cookie jars Aurion hands back, plus the tokens

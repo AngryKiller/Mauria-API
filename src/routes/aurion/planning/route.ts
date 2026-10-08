@@ -1,5 +1,5 @@
 import { FastifyInstance } from "fastify";
-import { SessionManager } from "../utils/session-manager";
+import { SessionManager, baseUrlSchema } from "../utils/session-manager";
 import { AurionPlanning } from "./planning";
 import { PlanningRequest } from "../../../types/aurion";
 import Sentry from "@sentry/node";
@@ -16,6 +16,7 @@ export async function planningRoute(fastify: FastifyInstance) {
                     properties: {
                         email: { type: "string" },
                         password: { type: "string" },
+                        baseUrl: baseUrlSchema,
                         startTimestamp: {
                             type: "number",
                             description: "Timestamp en millisecondes",
@@ -71,7 +72,7 @@ export async function planningRoute(fastify: FastifyInstance) {
             },
         },
         async (request, reply) => {
-            const sessionManager = new SessionManager();
+            const sessionManager = new SessionManager(request.body.baseUrl);
             const aurionClient = new AurionPlanning(sessionManager);
 
             const start = request.body.startTimestamp

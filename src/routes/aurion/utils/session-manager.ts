@@ -20,12 +20,19 @@ import {
 const log = logger.child({ module: "aurion-session" });
 
 /**
- * The only place the Aurion host is written down. Every Aurion request goes
- * through a SessionManager and builds its URLs from `session.baseUrl`, so
- * targeting another school's Aurion only takes a different constructor
- * argument.
+ * The only place the Aurion host is written down, used when a caller doesn't
+ * name its school's Aurion (see the `baseUrl` request field). Every Aurion
+ * request goes through a SessionManager and builds its URLs from
+ * `session.baseUrl`.
  */
 export const DEFAULT_AURION_URL = "https://aurion.junia.com";
+
+/** Body schema of the optional `baseUrl` field (see SchoolRequest). */
+export const baseUrlSchema = {
+    type: "string",
+    pattern: "^https://",
+    description: `URL racine de l'Aurion de l'école. ${DEFAULT_AURION_URL} par défaut.`,
+} as const;
 
 export type LoginOptions = {
     /**
@@ -51,7 +58,7 @@ export class SessionManager {
     private _client?: Got | undefined;
 
     /**
-     * In-flight logins, keyed by email. Concurrent cold requests for the same
+     * In-flight logins, keyed like the session cache. Concurrent cold requests for the same
      * user (the welcome page prefetches three Aurion features at once) share
      * one Aurion login instead of creating three sessions with three jars —
      * diverging jars would defeat the home-page single-flight. The entry is
@@ -65,6 +72,14 @@ export class SessionManager {
 
     constructor(baseUrl: string = DEFAULT_AURION_URL) {
         this.baseUrl = baseUrl.replace(/\/+$/, "");
+    }
+
+    /**
+     * Sessions are cached per Aurion instance as well as per email: a
+     * session of one school must never be replayed against another's Aurion.
+     */
+    private cacheKey(email: string): string {
+        return `${this.baseUrl} ${email}`;
     }
 
     /**
@@ -110,6 +125,7 @@ export class SessionManager {
         options?: LoginOptions
     ): Promise<boolean> {
         this.email = email;
+        const key = this.cacheKey(email);
 
         if (options?.noCache) {
             // Keep whatever jar the client is already bound to: callers that
@@ -119,7 +135,7 @@ export class SessionManager {
         }
 
         if (!options?.force) {
-            const cached = getCachedSession(email);
+            const cached = getCachedSession(key);
             if (cached) {
                 this.adoptJar(cached.cookieJar);
                 log.info({ email }, "session cache hit");
@@ -127,7 +143,7 @@ export class SessionManager {
             }
             // Join a concurrent login for the same email instead of stacking
             // a second one — the requests all carry the same credentials.
-            const inFlight = SessionManager.inFlightLogins.get(email);
+            const inFlight = SessionManager.inFlightLogins.get(key);
             if (inFlight) {
                 this.adoptJar(await inFlight);
                 log.info({ email }, "joined an in-flight login");
@@ -136,12 +152,12 @@ export class SessionManager {
         }
 
         const login = this.freshLogin(email, password);
-        SessionManager.inFlightLogins.set(email, login);
+        SessionManager.inFlightLogins.set(key, login);
         try {
             await login;
             return false;
         } finally {
-            SessionManager.inFlightLogins.delete(email);
+            SessionManager.inFlightLogins.delete(key);
         }
     }
 
@@ -153,7 +169,7 @@ export class SessionManager {
         log.info({ email }, "session cache miss, fresh login");
         this.adoptJar(new CookieJar());
         await this.postLogin(email, password);
-        storeSession(email, this.cookieJar);
+        storeSession(this.cacheKey(email), this.cookieJar);
         return this.cookieJar;
     }
 
@@ -180,7 +196,7 @@ export class SessionManager {
                 { email, err: errorMessage(error) },
                 "cached session failed, retrying with a fresh login"
             );
-            invalidateSession(email);
+            invalidateSession(this.cacheKey(email));
             await this.login(email, password, { force: true });
             return await flow();
         }
@@ -195,13 +211,14 @@ export class SessionManager {
      * single load instead of each paying the rendering.
      */
     async fetchHomePageState(): Promise<HomeState> {
-        const entry = getCachedSession(this.email);
+        const key = this.cacheKey(this.email);
+        const entry = getCachedSession(key);
         if (entry && entry.cookieJar === this.cookieJar) {
             if (entry.homeState) {
                 log.debug({ email: this.email }, "home page tokens cache hit");
                 return entry.homeState;
             }
-            const inFlight = getHomeStatePromise(this.email);
+            const inFlight = getHomeStatePromise(key);
             if (inFlight) {
                 log.debug(
                     { email: this.email },
@@ -211,11 +228,11 @@ export class SessionManager {
             }
         }
         const load = this.loadHomePageState();
-        setHomeStatePromise(this.email, load, this.cookieJar);
+        setHomeStatePromise(key, load, this.cookieJar);
         try {
             return await load;
         } finally {
-            clearHomeStatePromise(this.email, load);
+            clearHomeStatePromise(key, load);
         }
     }
 
@@ -232,7 +249,7 @@ export class SessionManager {
             formId: PageParser.parseFormId(res.body),
             idInit: PageParser.parseIdInit(res.body),
         };
-        storeHomeState(this.email, homeState, this.cookieJar);
+        storeHomeState(this.cacheKey(this.email), homeState, this.cookieJar);
         return homeState;
     }
 
