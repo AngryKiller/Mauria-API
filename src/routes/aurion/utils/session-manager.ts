@@ -15,7 +15,13 @@ import {
     storeSession,
 } from "./session-cache";
 
-const BASE_URL = "https://aurion.junia.com";
+/**
+ * The only place the Aurion host is written down. Every Aurion request goes
+ * through a SessionManager and builds its URLs from `session.baseUrl`, so
+ * targeting another school's Aurion only takes a different constructor
+ * argument.
+ */
+export const DEFAULT_AURION_URL = "https://aurion.junia.com";
 
 export type LoginOptions = {
     /**
@@ -33,6 +39,9 @@ export type LoginOptions = {
 };
 
 export class SessionManager {
+    /** Root of the Aurion instance, without trailing slash. */
+    public readonly baseUrl: string;
+
     private email = "";
     private cookieJar = new CookieJar();
     private _client?: Got | undefined;
@@ -49,6 +58,10 @@ export class SessionManager {
         string,
         Promise<CookieJar>
     >();
+
+    constructor(baseUrl: string = DEFAULT_AURION_URL) {
+        this.baseUrl = baseUrl.replace(/\/+$/, "");
+    }
 
     /**
      * Built lazily so login() can bind the client to the right cookie jar
@@ -198,7 +211,7 @@ export class SessionManager {
     }
 
     private async loadHomePageState(): Promise<HomeState> {
-        const res = await this.client.get(`${BASE_URL}/`, {
+        const res = await this.client.get(`${this.baseUrl}/`, {
             responseType: "text",
         });
         // PageParser throws when the page is not the expected one — a stale
@@ -226,7 +239,7 @@ export class SessionManager {
             j_idt28: "",
         }).toString();
 
-        const response = await this.client.post(`${BASE_URL}/login`, {
+        const response = await this.client.post(`${this.baseUrl}/login`, {
             body: payload,
         });
 
