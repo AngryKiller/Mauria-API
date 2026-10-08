@@ -1,11 +1,11 @@
 import { FastifyInstance } from "fastify";
 import { AurionLogin } from "./login";
-import { SessionManager } from "../utils/session-manager";
-import { IdRequest } from "../../../types/aurion";
+import { SessionManager, baseUrlSchema } from "../utils/session-manager";
+import { SchoolRequest } from "../../../types/aurion";
 import Sentry from "@sentry/node";
 
 export async function loginRoute(fastify: FastifyInstance) {
-    fastify.post<{ Body: IdRequest }>(
+    fastify.post<{ Body: SchoolRequest }>(
         "/aurion/login",
         {
             schema: {
@@ -14,6 +14,7 @@ export async function loginRoute(fastify: FastifyInstance) {
                     properties: {
                         email: { type: "string" },
                         password: { type: "string" },
+                        baseUrl: baseUrlSchema,
                     },
                     required: ["email", "password"],
                 },
@@ -37,7 +38,7 @@ export async function loginRoute(fastify: FastifyInstance) {
             },
         },
         async (request, reply) => {
-            const sessionManager = new SessionManager();
+            const sessionManager = new SessionManager(request.body.baseUrl);
             const aurionClient = new AurionLogin(sessionManager);
 
             try {
