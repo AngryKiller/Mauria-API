@@ -114,12 +114,16 @@ export class AurionPlanning {
             }
         );
 
-        const match = res.body.match(/\[\{"id"(.*?)]]/);
-        if (!match) {
+        const updateRegex = new RegExp(
+            `<update id="${this.formIdPlanning}"><!\\[CDATA\\[([\\s\\S]*?)]]></update>`
+        );
+        const match = res.body.match(updateRegex);
+        if (!match || !match[1]) {
             throw new Error("Planning data not found in response");
         }
-        const data = match[0].slice(0, -3);
-        return JSON.parse(data);
+        const data = match[1];
+        const parsed = JSON.parse(data);
+        return parsed.events;
     }
 
     async getPlanning(
