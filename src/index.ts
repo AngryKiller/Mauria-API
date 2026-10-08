@@ -17,13 +17,29 @@ import devRoutes from "./routes/dev/index";
 
 import Sentry from "@sentry/node";
 import "./utils/sentry";
+import {
+    errorMessage,
+    logger,
+    requestChildLogger,
+    runWithRequestId,
+} from "./utils/logger";
 
 import fastifyCors from "@fastify/cors";
 
 const port = process.env.PORT || 8080;
 const host = process.env.HOST || "0.0.0.0";
 
-const app = Fastify({ logger: false });
+// Fastify logs each incoming request and its completion (status, response
+// time) through the shared logger.
+const app = Fastify({ loggerInstance: logger });
+app.setChildLoggerFactory(requestChildLogger);
+
+// Tag everything logged while handling a request (outgoing calls, parsing…)
+// with its reqId. preHandler runs once the body is parsed, so the context
+// carries over to the handler.
+app.addHook("preHandler", (request, _reply, done) => {
+    runWithRequestId(request.id, done);
+});
 
 Sentry.setupFastifyErrorHandler(app as any);
 
@@ -103,26 +119,30 @@ const start = async () => {
         // Supabase must not wedge the boot either.
         await new Promise<void>((resolve) => {
             const timer = setTimeout(() => {
-                console.warn(
-                    "[palantir] index load timed out, serving without it"
+                logger.warn(
+                    "palantir index load timed out, serving without it"
                 );
                 resolve();
             }, 15000);
             loadPersistedIndex()
-                .catch(() => false)
+                .catch((error) => {
+                    logger.error(
+                        { err: errorMessage(error) },
+                        "palantir index load failed"
+                    );
+                    return false;
+                })
                 .then(() => {
                     clearTimeout(timer);
                     resolve();
                 });
         });
 
+        // Fastify logs the listening address itself.
         await app.listen({ port: Number(port), host });
-        if (isDev) {
-            console.log(`Server listening at + Swagger http://${host}:${port}`);
-        }
     } catch (err) {
         Sentry.captureException(err);
-        app.log.error(err);
+        logger.fatal({ err }, "server failed to start");
         process.exit(1);
     }
 };

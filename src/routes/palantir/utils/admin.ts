@@ -10,6 +10,9 @@
  */
 
 import { getSupabaseAdmin } from "../../supa-data/utils/supabase";
+import { logger } from "../../../utils/logger";
+
+const log = logger.child({ module: "palantir-admin" });
 
 /** Admins rarely change; a short cache keeps the table read off the hot path. */
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -22,11 +25,20 @@ export async function isAdminEmail(email: string): Promise<boolean> {
         const supabaseAdmin = getSupabaseAdmin();
         // Fail closed: an unreachable Supabase or a missing table means
         // nobody is admin, never that everybody is.
-        if (!supabaseAdmin) return false;
+        if (!supabaseAdmin) {
+            log.warn("SUPABASE_SERVICE_KEY not configured, nobody is admin");
+            return false;
+        }
         const { data, error } = await supabaseAdmin
             .from("palantir_admins")
             .select("email");
-        if (error || !data) return false;
+        if (error || !data) {
+            log.warn(
+                { err: error?.message },
+                "admin list unreadable, nobody is admin"
+            );
+            return false;
+        }
         cache = {
             emails: new Set(
                 data

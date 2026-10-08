@@ -100,12 +100,14 @@ export async function palantirPublishRoute(fastify: FastifyInstance) {
         },
         async (request, reply) => {
             if (!PUBLISH_TOKEN) {
+                request.log.warn("palantir publish: no token configured");
                 return reply.status(401).send({
                     success: false,
                     error: "PALANTIR_PUBLISH_TOKEN is not configured",
                 });
             }
             if (!tokenMatches(String(request.headers[TOKEN_HEADER] ?? ""))) {
+                request.log.warn("palantir publish: invalid token");
                 return reply.status(401).send({
                     success: false,
                     error: "token invalide",
@@ -116,6 +118,7 @@ export async function palantirPublishRoute(fastify: FastifyInstance) {
                 await publishIndex(request.body);
                 return { success: true, data: getStatus() };
             } catch (error) {
+                request.log.error({ err: error }, "palantir publish failed");
                 return reply.status(500).send({
                     success: false,
                     error: error instanceof Error ? error.message : "Unknown error",

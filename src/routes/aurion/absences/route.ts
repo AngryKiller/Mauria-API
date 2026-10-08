@@ -59,6 +59,7 @@ export async function absencesRoute(fastify: FastifyInstance) {
                 );
                 return { success: true, data: absences };
             } catch (error) {
+                request.log.error({ err: error }, "aurion absences failed");
                 Sentry.captureException(error);
 
                 return reply.status(500).send({

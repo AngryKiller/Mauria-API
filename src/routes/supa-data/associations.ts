@@ -36,6 +36,7 @@ export async function associationsRoute(fastify: FastifyInstance) {
                 const assos = await getAssos();
                 return assos;
             } catch (error) {
+                request.log.error({ err: error }, "associations failed");
                 return reply.status(500).send({
                     success: false,
                     error:

@@ -52,6 +52,7 @@ export async function buildingsRoute(fastify: FastifyInstance) {
             try {
                 return await getBuildings();
             } catch (error) {
+                request.log.error({ err: error }, "findmyroom buildings failed");
                 Sentry.captureException(error);
                 return reply.status(500).send({
                     success: false,

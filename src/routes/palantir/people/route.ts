@@ -7,6 +7,9 @@ import {
 import { isAdminEmail } from "../utils/admin";
 import { searchPeople } from "../utils/palantir-index";
 import { getSupabaseAdmin } from "../../supa-data/utils/supabase";
+import { errorMessage, logger } from "../../../utils/logger";
+
+const log = logger.child({ module: "palantir-people" });
 
 type CollesStudentRow = {
     class: string;
@@ -78,9 +81,15 @@ async function withCollesGroups(
         return students.map((student) => ({ ...student, collesGroup: null }));
     }
 
-    const { data: rows } = await supabaseAdmin
+    const { data: rows, error } = await supabaseAdmin
         .from("colles_students")
         .select("class, group_name, first_name, last_name");
+    if (error) {
+        log.warn(
+            { err: error.message },
+            "colles roster unreadable, groups left empty"
+        );
+    }
     const roster = (rows ?? []) as CollesStudentRow[];
 
     return students.map((student) => ({
@@ -177,7 +186,11 @@ export async function palantirPeopleRoute(fastify: FastifyInstance) {
                 // a live Aurion session for this email implies the password
                 // was verified when it was created.
                 await session.login(email, password);
-            } catch {
+            } catch (error) {
+                request.log.warn(
+                    { err: errorMessage(error) },
+                    "palantir people: admin login failed"
+                );
                 return reply.callNotFound();
             }
 

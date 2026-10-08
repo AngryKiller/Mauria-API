@@ -61,6 +61,7 @@ export async function castelruRoute(fastify: FastifyInstance) {
             try {
                 return await getCastelRuMenu();
             } catch (error) {
+                request.log.error({ err: error }, "castelru menu failed");
                 Sentry.captureException(error);
                 return reply.status(500).send({
                     success: false,

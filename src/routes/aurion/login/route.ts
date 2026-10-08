@@ -47,6 +47,7 @@ export async function loginRoute(fastify: FastifyInstance) {
                 );
                 return { success: true };
             } catch (error) {
+                request.log.error({ err: error }, "aurion login failed");
                 Sentry.captureException(error);
                 return reply.status(500).send({
                     success: false,

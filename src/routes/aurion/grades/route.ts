@@ -64,6 +64,7 @@ export async function gradesRoute(fastify: FastifyInstance) {
                 );
                 return { success: true, data: grades };
             } catch (error) {
+                request.log.error({ err: error }, "aurion grades failed");
                 Sentry.captureException(error);
 
                 return reply.status(500).send({

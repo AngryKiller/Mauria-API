@@ -1,5 +1,8 @@
 import { SessionManager } from "../utils/session-manager";
 import { PageParser } from "../utils/page-parser";
+import { logger } from "../../../utils/logger";
+
+const log = logger.child({ module: "aurion-documents" });
 
 export type DocumentCategory = {
     menuid: string;
@@ -329,7 +332,10 @@ export class AurionDocuments {
         referer: string,
         depth = 0
     ): Promise<string> {
-        if (depth > 5) return "";
+        if (depth > 5) {
+            log.warn({ url }, "too many redirects, giving up on this page");
+            return "";
+        }
         const res = await this.sessionManager.client.get(url, {
             headers: { Referer: referer },
             responseType: "text",
@@ -371,8 +377,13 @@ export class AurionDocuments {
             // session. Throw so `run` retries with a fresh login instead of
             // silently returning an empty document list.
             if (leaves.length === 0) {
+                log.warn(
+                    { entries: entries.length, bytes: submenuBody.length },
+                    "documents submenu has no leaves"
+                );
                 throw new Error("Aucune catégorie de documents trouvée");
             }
+            log.debug({ leaves }, "documents submenu leaves");
 
             const categories: DocumentCategory[] = [];
             const documents: AurionDocumentEntry[] = [];
@@ -383,6 +394,10 @@ export class AurionDocuments {
                 // Type A: DataGrid with troncature-download-doc
                 const gridDocs = parseDataGridDocuments(html, leaf.menuid);
                 if (gridDocs.length > 0) {
+                    log.debug(
+                        { leaf: leaf.label, documents: gridDocs.length },
+                        "datagrid leaf"
+                    );
                     categories.push(leaf);
                     documents.push(...gridDocs);
                     continue;
@@ -391,6 +406,10 @@ export class AurionDocuments {
                 // Type B: SelectOneMenu with documents_input
                 const selectDocs = parseSelectDocuments(html, leaf.menuid);
                 if (selectDocs.length > 0) {
+                    log.debug(
+                        { leaf: leaf.label, documents: selectDocs.length },
+                        "select leaf"
+                    );
                     categories.push(leaf);
                     documents.push(...selectDocs);
                     continue;
@@ -399,6 +418,10 @@ export class AurionDocuments {
                 // Type C: DataTable with "Consulter" buttons
                 const consulterRows = parseConsulterRows(html);
                 if (consulterRows.length > 0) {
+                    log.debug(
+                        { leaf: leaf.label, rows: consulterRows.length },
+                        "consulter leaf"
+                    );
                     categories.push(leaf);
                     for (const row of consulterRows) {
                         // Click "Consulter" to reach the detail page.
@@ -414,14 +437,28 @@ export class AurionDocuments {
                         if (doc) {
                             doc.consulterParam = row.consulterParam;
                             documents.push(doc);
+                        } else {
+                            log.warn(
+                                { leaf: leaf.label, row: row.rowLabel },
+                                "consulter detail page has no document"
+                            );
                         }
                     }
                     continue;
                 }
 
                 // No downloadable documents on this leaf — skip it.
+                log.debug({ leaf: leaf.label }, "leaf without documents");
             }
 
+            log.info(
+                {
+                    leaves: leaves.length,
+                    categories: categories.length,
+                    documents: documents.length,
+                },
+                "documents listed"
+            );
             return { categories, documents };
         });
     }
@@ -470,6 +507,7 @@ export class AurionDocuments {
         downloadButtonParam?: string,
         consulterParam?: string
     ): Promise<{ buffer: Buffer; filename: string }> {
+        log.info({ category, docIndex, downloadType }, "downloading document");
         return this.sessionManager.run(email, password, async () => {
             await this.initializeSession();
 
@@ -578,14 +616,28 @@ export class AurionDocuments {
         });
 
         if (dl.statusCode !== 200 || dl.body.length === 0) {
+            log.warn(
+                {
+                    status: dl.statusCode,
+                    bytes: dl.body.length,
+                    contentType: dl.headers["content-type"],
+                },
+                "document download failed"
+            );
             throw new Error(`Échec du téléchargement (HTTP ${dl.statusCode})`);
         }
 
         const cd = dl.headers["content-disposition"] as string | undefined;
         const cdFilename = cd?.match(/filename="([^"]+)"/)?.[1];
-        return {
-            buffer: dl.body,
-            filename: cdFilename || fallbackFilename,
-        };
+        // Without it the body may well be an HTML page rather than the file.
+        if (!cd) {
+            log.warn(
+                { contentType: dl.headers["content-type"] },
+                "document download has no Content-Disposition"
+            );
+        }
+        const filename = cdFilename || fallbackFilename;
+        log.info({ filename, bytes: dl.body.length }, "document downloaded");
+        return { buffer: dl.body, filename };
     }
 }

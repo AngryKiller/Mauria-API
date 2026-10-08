@@ -84,6 +84,7 @@ export async function jobsUploadRoute(fastify: FastifyInstance) {
                 );
                 return { success: true };
             } catch (error) {
+                request.log.error({ err: error }, "print job upload failed");
                 Sentry.captureException(error);
 
                 return reply.status(500).send({

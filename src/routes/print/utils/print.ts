@@ -1,4 +1,7 @@
 import { PrintSessionManager, PRINT_BASE } from "./session-manager";
+import { logger } from "../../../utils/logger";
+
+const log = logger.child({ module: "print" });
 
 export type PrintFolder = "WAITING" | "PRINTED";
 
@@ -152,6 +155,14 @@ export class PrintClient {
     private async getPage(path: string): Promise<string> {
         const response = await this.session.client.get(`${PRINT_BASE}${path}`);
         if (response.statusCode !== 200) {
+            log.warn(
+                {
+                    path,
+                    status: response.statusCode,
+                    location: response.headers.location,
+                },
+                "SafeQ page unavailable"
+            );
             throw new Error(`Page ${path} inaccessible (${response.statusCode})`);
         }
         return response.body;
@@ -187,6 +198,7 @@ export class PrintClient {
                 owner: owner.trim(),
             });
         }
+        log.info({ folder, jobs: jobs.length }, "print jobs listed");
         return jobs;
     }
 
@@ -196,6 +208,7 @@ export class PrintClient {
             /id="last-jobs-delete"[^>]*data-csrf-token="([^"]+)"/
         )?.[1];
         if (!csrf) {
+            log.warn({ bytes: html.length }, "dashboard has no delete CSRF token");
             throw new Error("Token CSRF de suppression introuvable");
         }
 
@@ -215,6 +228,7 @@ export class PrintClient {
         if (response.statusCode !== 302 && response.statusCode !== 200) {
             throw new Error(`Suppression échouée (${response.statusCode})`);
         }
+        log.info({ jobs: ids.length }, "print jobs deleted");
     }
 
     async uploadJob(
@@ -227,6 +241,7 @@ export class PrintClient {
         const html = await this.getPage("/upload-job");
         const csrf = html.match(/name="csrfToken"[^>]*value="([^"]+)"/)?.[1];
         if (!csrf) {
+            log.warn({ bytes: html.length }, "upload page has no CSRF token");
             throw new Error("Token CSRF d'envoi introuvable");
         }
 
@@ -249,6 +264,10 @@ export class PrintClient {
         if (response.statusCode !== 200) {
             throw new Error(`Envoi échoué (${response.statusCode})`);
         }
+        log.info(
+            { filename, mimeType, bytes: buffer.length, bw, duplex },
+            "print job uploaded"
+        );
     }
 
     async getBalance(): Promise<PrintBalance> {

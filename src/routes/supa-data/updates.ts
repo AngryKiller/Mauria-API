@@ -45,6 +45,7 @@ export async function updatesRoute(fastify: FastifyInstance) {
                 const updates = await getUpdates();
                 return updates;
             } catch (error) {
+                request.log.error({ err: error }, "updates failed");
                 return reply.status(500).send({
                     success: false,
                     error:

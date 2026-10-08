@@ -4,6 +4,8 @@ import got from "got";
 import type { Got } from "got";
 import { CookieJar } from "tough-cookie";
 import { PageParser } from "./page-parser";
+import { gotLogHooks } from "../../../utils/http-log";
+import { errorMessage, logger } from "../../../utils/logger";
 import {
     HomeState,
     clearHomeStatePromise,
@@ -14,6 +16,8 @@ import {
     storeHomeState,
     storeSession,
 } from "./session-cache";
+
+const log = logger.child({ module: "aurion-session" });
 
 /**
  * The only place the Aurion host is written down. Every Aurion request goes
@@ -86,6 +90,7 @@ export class SessionManager {
             },
             followRedirect: false,
             throwHttpErrors: false,
+            hooks: gotLogHooks("aurion"),
         });
         return this._client;
     }
@@ -117,7 +122,7 @@ export class SessionManager {
             const cached = getCachedSession(email);
             if (cached) {
                 this.adoptJar(cached.cookieJar);
-                console.log(`[aurion-session] cache hit (${email})`);
+                log.info({ email }, "session cache hit");
                 return true;
             }
             // Join a concurrent login for the same email instead of stacking
@@ -125,9 +130,7 @@ export class SessionManager {
             const inFlight = SessionManager.inFlightLogins.get(email);
             if (inFlight) {
                 this.adoptJar(await inFlight);
-                console.log(
-                    `[aurion-session] joined an in-flight login (${email})`
-                );
+                log.info({ email }, "joined an in-flight login");
                 return true;
             }
         }
@@ -147,10 +150,10 @@ export class SessionManager {
         email: string,
         password: string
     ): Promise<CookieJar> {
+        log.info({ email }, "session cache miss, fresh login");
         this.adoptJar(new CookieJar());
         await this.postLogin(email, password);
         storeSession(email, this.cookieJar);
-        console.log(`[aurion-session] cache miss, fresh login (${email})`);
         return this.cookieJar;
     }
 
@@ -173,8 +176,9 @@ export class SessionManager {
             if (!fromCache) {
                 throw error;
             }
-            console.warn(
-                `[aurion-session] cached session failed (${email}), retrying with a fresh login`
+            log.warn(
+                { email, err: errorMessage(error) },
+                "cached session failed, retrying with a fresh login"
             );
             invalidateSession(email);
             await this.login(email, password, { force: true });
@@ -194,10 +198,15 @@ export class SessionManager {
         const entry = getCachedSession(this.email);
         if (entry && entry.cookieJar === this.cookieJar) {
             if (entry.homeState) {
+                log.debug({ email: this.email }, "home page tokens cache hit");
                 return entry.homeState;
             }
             const inFlight = getHomeStatePromise(this.email);
             if (inFlight) {
+                log.debug(
+                    { email: this.email },
+                    "joined an in-flight home page load"
+                );
                 return inFlight;
             }
         }
@@ -211,6 +220,7 @@ export class SessionManager {
     }
 
     private async loadHomePageState(): Promise<HomeState> {
+        log.info({ email: this.email }, "loading home page tokens");
         const res = await this.client.get(`${this.baseUrl}/`, {
             responseType: "text",
         });
@@ -233,6 +243,7 @@ export class SessionManager {
     }
 
     private async postLogin(email: string, password: string): Promise<void> {
+        const start = Date.now();
         const payload = new URLSearchParams({
             username: email,
             password,
@@ -243,13 +254,23 @@ export class SessionManager {
             body: payload,
         });
 
+        // Wrong credentials make Aurion answer 200 with the login form again.
         if (response.statusCode !== 302) {
+            log.warn(
+                { email, status: response.statusCode },
+                "login refused by Aurion"
+            );
             throw new Error(`Login échoué, code HTTP ${response.statusCode}`);
         }
 
         const setCookie = response.headers["set-cookie"];
         if (!setCookie || !setCookie.length) {
+            log.warn(
+                { email, location: response.headers.location },
+                "login answered without a session cookie"
+            );
             throw new Error("Aucun cookie de session reçu");
         }
+        log.info({ email, ms: Date.now() - start }, "logged in to Aurion");
     }
 }

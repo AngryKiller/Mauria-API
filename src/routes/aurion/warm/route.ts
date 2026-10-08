@@ -49,6 +49,7 @@ export async function warmRoute(fastify: FastifyInstance) {
                 );
                 return { success: true };
             } catch (error) {
+                request.log.error({ err: error }, "aurion warm failed");
                 Sentry.captureException(error);
                 return reply.status(500).send({
                     success: false,

@@ -121,6 +121,7 @@ export async function documentsRoute(fastify: FastifyInstance) {
                 );
                 return { success: true, data: result };
             } catch (error) {
+                request.log.error({ err: error }, "aurion documents list failed");
                 Sentry.captureException(error);
                 return reply.status(500).send({
                     success: false,
@@ -179,6 +180,7 @@ export async function documentsRoute(fastify: FastifyInstance) {
                 );
                 return reply.send(buffer);
             } catch (error) {
+                request.log.error({ err: error }, "aurion document download failed");
                 Sentry.captureException(error);
                 return reply.status(500).send({
                     success: false,
@@ -231,6 +233,7 @@ export async function documentsRoute(fastify: FastifyInstance) {
                     data: { token, expiresIn: TOKEN_TTL_MS },
                 };
             } catch (error) {
+                request.log.error({ err: error }, "aurion download link failed");
                 Sentry.captureException(error);
                 return reply.status(500).send({
                     success: false,
@@ -281,6 +284,7 @@ export async function documentsRoute(fastify: FastifyInstance) {
                 reply.header("Cache-Control", "no-store");
                 return reply.send(buffer);
             } catch (error) {
+                request.log.error({ err: error }, "aurion document file failed");
                 Sentry.captureException(error);
                 const message =
                     error instanceof Error ? error.message : "Unknown error";

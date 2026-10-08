@@ -1,10 +1,18 @@
 import { PageParser } from "../utils/page-parser";
 import { SessionManager } from "../utils/session-manager";
+import { logger } from "../../../utils/logger";
+
+const log = logger.child({ module: "aurion-planning" });
+
+/** Sidebar labels, as regex sources (Aurion may HTML-escape the accent). */
+const MON_PLANNING = "Mon Planning";
+const SCOLARITE = "Scolarit(?:é|&eacute;|&#233;)";
 
 export class AurionPlanning {
     private sessionManager: SessionManager;
 
     private viewState = "";
+    private formId = "";
     private menuid = "";
     private idInit = "";
     private formIdPlanning = "";
@@ -16,23 +24,37 @@ export class AurionPlanning {
     async initializeSession() {
         const homeState = await this.sessionManager.fetchHomePageState();
         this.viewState = homeState.viewState;
+        this.formId = homeState.formId;
         this.idInit = homeState.idInit;
     }
 
+    /**
+     * Click "Mon Planning" in the sidebar. Some schools list it at the top
+     * level of the menu, others inside the lazy-loaded "Scolarité" submenu,
+     * which then has to be expanded first.
+     */
     async postMainSidebar() {
-        const getSidebarMenuId = await this.sessionManager.client.get(
-            `${this.sessionManager.baseUrl}/faces/MainMenuPage.xhtml`,
+        const base = this.sessionManager.baseUrl;
+        const menuPage = await this.sessionManager.client.get(
+            `${base}/faces/MainMenuPage.xhtml`,
             {
                 headers: {
-                    Referer: `${this.sessionManager.baseUrl}/`,
+                    Referer: `${base}/`,
                     Connection: "keep-alive",
                 },
                 responseType: "text",
             }
         );
+        this.viewState = PageParser.parseViewState(menuPage.body);
 
-        this.menuid = PageParser.parseSidebarMenuIdForMonPlanning(
-            getSidebarMenuId.body
+        const topLevel = PageParser.parseSidebarMenuId(
+            menuPage.body,
+            MON_PLANNING
+        );
+        this.menuid = topLevel ?? (await this.expandScolarite(menuPage.body));
+        log.debug(
+            { menuid: this.menuid, inScolarite: topLevel === null },
+            "« Mon Planning » menu entry found"
         );
 
         const postData = new URLSearchParams({
@@ -47,8 +69,8 @@ export class AurionPlanning {
             "form:sidebar_menuid": this.menuid,
         }).toString();
 
-        await this.sessionManager.client.post(
-            `${this.sessionManager.baseUrl}/faces/MainMenuPage.xhtml`,
+        const post = await this.sessionManager.client.post(
+            `${base}/faces/MainMenuPage.xhtml`,
             {
                 body: postData,
                 headers: {
@@ -57,21 +79,68 @@ export class AurionPlanning {
                 responseType: "text",
             }
         );
+        const target = post.headers.location
+            ? new URL(post.headers.location, base).toString()
+            : `${base}/faces/Planning.xhtml`;
 
-        const getRes = await this.sessionManager.client.get(
-            `${this.sessionManager.baseUrl}/faces/Planning.xhtml`,
-            {
-                headers: {
-                    Referer:
-                        `${this.sessionManager.baseUrl}/faces/MainMenuPage.xhtml`,
-                    Connection: "keep-alive",
-                },
-                responseType: "text",
-            }
-        );
+        const getRes = await this.sessionManager.client.get(target, {
+            headers: {
+                Referer: `${base}/faces/MainMenuPage.xhtml`,
+                Connection: "keep-alive",
+            },
+            responseType: "text",
+        });
 
         this.viewState = PageParser.parseViewState(getRes.body);
         this.formIdPlanning = PageParser.parseFormIdPlanning(getRes.body);
+    }
+
+    /**
+     * Expand the "Scolarité" submenu and return the menuid of the "Mon
+     * Planning" entry it lazy-loads. The partial response carries the
+     * ViewState the sidebar click has to use.
+     */
+    private async expandScolarite(menuBody: string): Promise<string> {
+        const submenuId = PageParser.parseSidebarSubmenuId(menuBody, SCOLARITE);
+        if (!submenuId) {
+            log.warn(
+                { bytes: menuBody.length },
+                "neither « Mon Planning » nor « Scolarité » in the sidebar"
+            );
+            throw new Error("Menu « Scolarité » non trouvé");
+        }
+
+        const ajax = new URLSearchParams({
+            "javax.faces.partial.ajax": "true",
+            "javax.faces.source": this.formId,
+            "javax.faces.partial.execute": this.formId,
+            "javax.faces.partial.render": "form:sidebar",
+            [this.formId]: this.formId,
+            "webscolaapp.Sidebar.ID_SUBMENU": submenuId,
+            form: "form",
+            "form:largeurDivCenter": "885",
+            "form:idInit": this.idInit,
+            "form:sauvegarde": "",
+            "javax.faces.ViewState": this.viewState,
+        }).toString();
+
+        const res = await this.sessionManager.client.post(
+            `${this.sessionManager.baseUrl}/faces/MainMenuPage.xhtml`,
+            { body: ajax, responseType: "text" }
+        );
+        this.viewState =
+            PageParser.parsePartialViewState(res.body) || this.viewState;
+
+        const menuid = PageParser.parseSidebarMenuId(res.body, MON_PLANNING);
+        if (!menuid) {
+            log.warn(
+                { submenuId, bytes: res.body.length },
+                "« Mon Planning » missing from the expanded « Scolarité »"
+            );
+            log.debug({ snippet: res.body.slice(0, 3000) }, "submenu body");
+            throw new Error("« Mon Planning » non trouvé dans « Scolarité »");
+        }
+        return menuid;
     }
 
     async postPlan(
@@ -119,10 +188,32 @@ export class AurionPlanning {
         );
         const match = res.body.match(updateRegex);
         if (!match || !match[1]) {
+            log.warn(
+                {
+                    formIdPlanning: this.formIdPlanning,
+                    status: res.statusCode,
+                    bytes: res.body.length,
+                },
+                "planning update missing from Aurion's response"
+            );
+            log.debug({ snippet: res.body.slice(0, 3000) }, "planning body");
             throw new Error("Planning data not found in response");
         }
         const data = match[1];
-        const parsed = JSON.parse(data);
+        let parsed: { events?: unknown[] };
+        try {
+            parsed = JSON.parse(data);
+        } catch (error) {
+            log.warn(
+                { snippet: data.slice(0, 500) },
+                "planning update is not valid JSON"
+            );
+            throw error;
+        }
+        log.info(
+            { events: parsed.events?.length ?? 0, start, end },
+            "planning fetched"
+        );
         return parsed.events;
     }
 

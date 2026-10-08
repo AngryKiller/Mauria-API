@@ -61,6 +61,7 @@ export async function menuRoute(fastify: FastifyInstance) {
             try {
                 return await getDailyMenu();
             } catch (error) {
+                request.log.error({ err: error }, "lacatho menu failed");
                 Sentry.captureException(error);
                 return reply.status(500).send({
                     success: false,
