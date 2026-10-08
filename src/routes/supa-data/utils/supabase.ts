@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 import dotenv from "dotenv";
+import { loggedFetch } from "../../../utils/http-log";
 dotenv.config();
 
 export const pfpUrl =
@@ -25,7 +26,9 @@ export function getSupabase(): SupabaseClient {
         );
     }
 
-    client = createClient(supabaseUrl, supabaseKey);
+    client = createClient(supabaseUrl, supabaseKey, {
+        global: { fetch: loggedFetch("supabase") },
+    });
     return client;
 }
 
@@ -48,6 +51,8 @@ export function getSupabaseAdmin(): SupabaseClient | null {
     const key = process.env.SUPABASE_SERVICE_KEY;
     if (!url || !key) return null;
 
-    adminClient = createClient(url, key);
+    adminClient = createClient(url, key, {
+        global: { fetch: loggedFetch("supabase-admin") },
+    });
     return adminClient;
 }

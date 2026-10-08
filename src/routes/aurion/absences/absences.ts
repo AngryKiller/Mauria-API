@@ -1,5 +1,8 @@
 import { PageParser } from "../utils/page-parser";
 import { SessionManager } from "../utils/session-manager";
+import { logger } from "../../../utils/logger";
+
+const log = logger.child({ module: "aurion-absences" });
 
 export class AurionAbsences {
     private sessionManager: SessionManager;
@@ -132,7 +135,9 @@ export class AurionAbsences {
             }
         );
 
-        return PageParser.parseAbsences(res.body);
+        const absences = PageParser.parseAbsences(res.body);
+        log.info({ absences: absences.length }, "absences fetched");
+        return absences;
     }
 
     async getAllAbsences(email: string, password: string): Promise<any[]> {

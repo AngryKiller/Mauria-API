@@ -1,4 +1,9 @@
 import { Building, RoomsForBuilding } from "../../../types/findmyroom";
+import { loggedFetch } from "../../../utils/http-log";
+import { errorMessage, logger } from "../../../utils/logger";
+
+const log = logger.child({ module: "findmyroom" });
+const fetch = loggedFetch("findmyroom");
 
 // findmyroom.junia.com is a small internal Flask/waitress app with no CORS
 // headers at all, so the Webapp can't call it directly — this proxies it and
@@ -65,7 +70,13 @@ export async function getBuildings(): Promise<Building[]> {
         return data;
     } catch (error) {
         // Serve a stale copy rather than failing if findmyroom is briefly down.
-        if (buildingsCache) return buildingsCache.data;
+        if (buildingsCache) {
+            log.warn(
+                { err: errorMessage(error) },
+                "buildings unavailable, serving stale copy"
+            );
+            return buildingsCache.data;
+        }
         throw error;
     }
 }
@@ -86,7 +97,13 @@ export async function getRoomsForBuilding(
         roomsCache.set(buildingCode, { data, fetchedAt: Date.now() });
         return data;
     } catch (error) {
-        if (cached) return cached.data;
+        if (cached) {
+            log.warn(
+                { buildingCode, err: errorMessage(error) },
+                "rooms unavailable, serving stale copy"
+            );
+            return cached.data;
+        }
         throw error;
     }
 }
@@ -114,7 +131,11 @@ async function withoutClosedRooms(
                     ? Math.round((dispo / building.total) * 100)
                     : 0,
         };
-    } catch {
+    } catch (error) {
+        log.warn(
+            { buildingCode: building.code, err: errorMessage(error) },
+            "rooms unavailable, closed rooms not deducted"
+        );
         return { ...building, fermees: 0 };
     }
 }

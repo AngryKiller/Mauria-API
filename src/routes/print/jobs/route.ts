@@ -59,6 +59,7 @@ export async function jobsRoute(fastify: FastifyInstance) {
                 const jobs = await printClient.listJobs(request.body.folder);
                 return { success: true, data: jobs };
             } catch (error) {
+                request.log.error({ err: error }, "print jobs failed");
                 Sentry.captureException(error);
 
                 return reply.status(500).send({

@@ -31,6 +31,9 @@ import {
     readTitleTeacher,
 } from "./index-format";
 import type { HarvestWindow } from "./harvester";
+import { logger } from "../../../utils/logger";
+
+const log = logger.child({ module: "palantir-index" });
 
 /** Table rows kept per build: the current index and the one before it. */
 const KEPT_VERSIONS = 2;
@@ -89,7 +92,7 @@ export async function loadPersistedIndex(): Promise<boolean> {
     if (!supabaseAdmin) {
         lastError =
             "SUPABASE_SERVICE_KEY is not configured — palantir_index sits behind RLS";
-        console.warn(`[palantir] ${lastError}`);
+        log.warn(lastError);
         return false;
     }
 
@@ -102,7 +105,7 @@ export async function loadPersistedIndex(): Promise<boolean> {
 
     if (error || !row) {
         lastError = error ? `Supabase: ${error.message}` : "aucun index persisté";
-        console.warn(`[palantir] no persisted index (${lastError})`);
+        log.warn({ err: lastError }, "no persisted index");
         return false;
     }
 
@@ -110,15 +113,19 @@ export async function loadPersistedIndex(): Promise<boolean> {
         data = deserializeIndex(row.payload as SerializedPalantirIndex);
     } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
-        console.warn(`[palantir] persisted index unreadable: ${lastError}`);
+        log.error({ err: lastError }, "persisted index unreadable");
         return false;
     }
 
     lastError = null;
-    console.log(
-        `[palantir] index loaded from Supabase (row ${row.id}): ` +
-            `${data.lessons.size} lessons, ${data.rooms.size} rooms, ` +
-            `${data.groups.length} groups`
+    log.info(
+        {
+            row: row.id,
+            lessons: data.lessons.size,
+            rooms: data.rooms.size,
+            groups: data.groups.length,
+        },
+        "index loaded from Supabase"
     );
     return true;
 }
@@ -178,16 +185,21 @@ export async function publishIndex(
             .delete()
             .not("id", "in", `(${[inserted.id, ...keepList].join(",")})`);
         if (pruneError) {
-            console.warn(`[palantir] prune failed: ${pruneError.message}`);
+            log.warn({ err: pruneError.message }, "old index prune failed");
         }
     }
 
     data = fresh;
     lastError = null;
-    console.log(
-        `[palantir] index published (row ${inserted.id}): ` +
-            `${fresh.lessons.size} lessons, ${fresh.rooms.size} rooms, ` +
-            `${fresh.groups.length} groups, expires ${new Date(fresh.expiresAt).toISOString()}`
+    log.info(
+        {
+            row: inserted.id,
+            lessons: fresh.lessons.size,
+            rooms: fresh.rooms.size,
+            groups: fresh.groups.length,
+            expiresAt: new Date(fresh.expiresAt).toISOString(),
+        },
+        "index published"
     );
 }
 

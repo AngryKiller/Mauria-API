@@ -1,5 +1,8 @@
 import { SessionManager } from "../utils/session-manager";
 import { PageParser } from "../utils/page-parser";
+import { logger } from "../../../utils/logger";
+
+const log = logger.child({ module: "aurion-grades" });
 
 export class AurionGrades {
     private sessionManager: SessionManager;
@@ -138,7 +141,9 @@ export class AurionGrades {
             }
         );
 
-        return PageParser.parseGrades(res.body);
+        const grades = PageParser.parseGrades(res.body);
+        log.info({ grades: grades.length }, "grades fetched");
+        return grades;
     }
 
     async getAllGrades(email: string, password: string): Promise<any[]> {

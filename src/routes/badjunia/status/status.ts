@@ -1,4 +1,10 @@
+import { loggedFetch } from "../../../utils/http-log";
+import { errorMessage, logger } from "../../../utils/logger";
+
 const STATUS_URL = "https://darklouis.dev/api/badjunia/status";
+
+const log = logger.child({ module: "badjunia" });
+const fetch = loggedFetch("badjunia");
 
 const CACHE_TTL_MS = 60 * 1000;
 const FETCH_TIMEOUT_MS = 5000;
@@ -150,7 +156,11 @@ export async function getJuniaStatus(): Promise<JuniaStatus> {
     const data = await fetchStatus();
     cache = { data, fetchedAt: Date.now() };
     return data;
-  } catch {
+  } catch (error) {
+    log.warn(
+      { err: errorMessage(error), stale: cache !== null },
+      "status unavailable, serving the last known one"
+    );
     return cache?.data ?? ALL_FINE;
   }
 }

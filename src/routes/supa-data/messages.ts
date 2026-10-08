@@ -34,6 +34,7 @@ export async function messagesRoute(fastify: FastifyInstance) {
                 const messages = await getMessages();
                 return messages;
             } catch (error) {
+                request.log.error({ err: error }, "messages failed");
                 return reply.status(500).send({
                     success: false,
                     error:

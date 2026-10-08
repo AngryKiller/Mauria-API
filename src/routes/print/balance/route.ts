@@ -54,6 +54,7 @@ export async function balanceRoute(fastify: FastifyInstance) {
                 const balance = await printClient.getBalance();
                 return { success: true, data: balance };
             } catch (error) {
+                request.log.error({ err: error }, "print balance failed");
                 Sentry.captureException(error);
 
                 return reply.status(500).send({

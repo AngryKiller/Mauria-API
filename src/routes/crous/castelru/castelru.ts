@@ -1,4 +1,9 @@
 import { DailyMenu, MenuSection, RestaurantMenu } from "../../../types/lacatho";
+import { loggedFetch } from "../../../utils/http-log";
+import { errorMessage, logger } from "../../../utils/logger";
+
+const log = logger.child({ module: "castelru" });
+const fetch = loggedFetch("castelru");
 
 /**
  * Menu du CastelRU (seul RU de Châteauroux), scrappé depuis le site du Crous
@@ -153,7 +158,14 @@ async function fetchCastelRuMenu(): Promise<DailyMenu> {
     if (!res.ok) {
         throw new Error(`CastelRU page download failed (HTTP ${res.status})`);
     }
-    return parseCastelRuMenu(await res.text());
+    const menu = parseCastelRuMenu(await res.text());
+    const sections = menu.restaurants[0]?.sections.length ?? 0;
+    if (sections === 0) {
+        log.warn({ date: menu.date }, "no menu found on the CastelRU page");
+    } else {
+        log.info({ date: menu.date, sections }, "CastelRU menu parsed");
+    }
+    return menu;
 }
 
 export async function getCastelRuMenu(): Promise<DailyMenu> {
@@ -165,7 +177,13 @@ export async function getCastelRuMenu(): Promise<DailyMenu> {
         cache = { data, fetchedAt: Date.now() };
         return data;
     } catch (error) {
-        if (cache) return cache.data;
+        if (cache) {
+            log.warn(
+                { err: errorMessage(error) },
+                "menu unavailable, serving stale copy"
+            );
+            return cache.data;
+        }
         throw error;
     }
 }

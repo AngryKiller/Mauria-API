@@ -1,11 +1,31 @@
 // PageParser.ts
 
+import { logger } from "../../../utils/logger";
+
+const log = logger.child({ module: "aurion-parser" });
+
 export class PageParser {
+    /**
+     * Log what the page actually was, then throw. The title alone usually
+     * tells the story (the login page on a stale session, an error page…);
+     * the start of the body follows at debug level.
+     */
+    private static fail(message: string, body: string): never {
+        const page = {
+            title: body.match(/<title>([^<]*)<\/title>/)?.[1]?.trim(),
+            partial: body.includes("<partial-response"),
+            bytes: body.length,
+        };
+        log.warn({ page }, message);
+        log.debug({ snippet: body.slice(0, 3000) }, `${message}: page start`);
+        throw new Error(message);
+    }
+
     static parseViewState(body: string): string {
         const match = body.match(
             /<input type="hidden" name="javax.faces.ViewState" id="j_id1:javax.faces.ViewState:0" value="([^"]+)" autocomplete="off" \/>/
         );
-        if (!match) throw new Error("ViewState non trouvé");
+        if (!match) PageParser.fail("ViewState non trouvé", body);
         return match[1]!;
     }
 
@@ -19,7 +39,7 @@ export class PageParser {
         const idxFrom = snippet.indexOf(from);
         const idxTo = snippet.indexOf(to);
         if (idxFrom === -1 || idxTo === -1)
-            throw new Error("FormId non trouvé");
+            PageParser.fail("FormId non trouvé", body);
         return snippet
             .substring(idxFrom + from.length, idxTo)
             .replace(/"/g, "");
@@ -28,7 +48,7 @@ export class PageParser {
     static parseIdInit(body: string): string {
         const from = 'name="form:idInit" value="';
         const startIndex = body.indexOf(from);
-        if (startIndex === -1) throw new Error("idInit non trouvé");
+        if (startIndex === -1) PageParser.fail("idInit non trouvé", body);
         const idxTo = body.indexOf('"', startIndex + from.length);
         return body.substring(startIndex + from.length, idxTo);
     }
@@ -37,14 +57,14 @@ export class PageParser {
         const searchStart = body.indexOf(keyword) - 300;
         const searchEnd = body.indexOf(keyword);
         if (searchStart < 0 || searchEnd < 0)
-            throw new Error("MenuId zone non trouvée");
+            PageParser.fail("MenuId zone non trouvée", body);
         const snippet = body.substring(searchStart, searchEnd);
         const from = "form:sidebar_menuid':'";
         const to = "'})";
         const idxFrom = snippet.indexOf(from);
         const idxTo = snippet.indexOf(to);
         if (idxFrom === -1 || idxTo === -1)
-            throw new Error("MenuId non trouvé");
+            PageParser.fail("MenuId non trouvé", body);
         return snippet.substring(idxFrom + from.length, idxTo);
     }
 
@@ -59,7 +79,7 @@ export class PageParser {
         const idxFrom = snippet.indexOf(from);
         const idxTo = snippet.indexOf(toDelim);
         if (idxFrom === -1 || idxTo === -1)
-            throw new Error("FormIdGrade non trouvé");
+            PageParser.fail("FormIdGrade non trouvé", body);
         return snippet.substring(idxFrom + from.length, idxTo);
     }
 
@@ -67,7 +87,7 @@ export class PageParser {
         const regex = /PrimeFaces\.cw\("Schedule","schedule",\{id:"([^"]+)"/;
         const match = body.match(regex);
         if (!match || match.length < 2 || !match[1]) {
-            throw new Error("FormIdPlanning non trouvé");
+            PageParser.fail("FormIdPlanning non trouvé", body);
         }
         const fullId = match[1];
         return fullId;
@@ -79,25 +99,69 @@ export class PageParser {
         return match ? match[1]! : "";
     }
 
-    static parseSidebarMenuIdForMonPlanning(body: string): string {
-        const regex =
-            /onclick="[^"]*?PrimeFaces\.addSubmitParam\('form',\{'form:sidebar':'form:sidebar','form:sidebar_menuid':'(\d+)'\}[^"]*?"[^>]*?>[^<]*<span class="ui-menuitem-icon ui-icon fa fa-calendar-alt"><\/span><span class="ui-menuitem-text">Mon Planning<\/span>/;
-        const match = body.match(regex);
-        if (!match || match.length < 2 || !match[1]) {
-            console.error("Sidebar menu id for 'Mon Planning' non trouvé");
-            console.log(body.substring(20000, 50000)); // Debug output
-            return "0";
-        }
-        return match[1];
+    /**
+     * "form:sidebar_menuid" of the sidebar leaf labelled `labelPattern`.
+     * Top-level leaves carry a plain number, lazy-loaded ones a position
+     * path such as "5_0".
+     */
+    static parseSidebarMenuId(
+        body: string,
+        labelPattern: string
+    ): string | null {
+        return PageParser.sidebarIdBefore(
+            body,
+            labelPattern,
+            /'form:sidebar_menuid':'([^']+)'/g
+        );
+    }
+
+    /** Id of the lazy-loaded sidebar submenu labelled `labelPattern`. */
+    static parseSidebarSubmenuId(
+        body: string,
+        labelPattern: string
+    ): string | null {
+        return PageParser.sidebarIdBefore(body, labelPattern, /submenu_(\d+)/g);
+    }
+
+    /**
+     * Sidebar ids sit in the markup right before the entry's label: the last
+     * one before the label is the entry's own, earlier ones are siblings'.
+     * `labelPattern` is a regex source, so accented labels can match both
+     * their raw and their HTML-escaped spelling. Matched case-insensitively:
+     * schools capitalise labels differently ("Mon Planning", "Mon planning").
+     */
+    private static sidebarIdBefore(
+        body: string,
+        labelPattern: string,
+        idRegex: RegExp
+    ): string | null {
+        const at = body.search(
+            new RegExp(
+                `<span class="ui-menuitem-text">\\s*${labelPattern}\\s*</span>`,
+                "i"
+            )
+        );
+        if (at === -1) return null;
+        const ids = [...body.slice(Math.max(0, at - 600), at).matchAll(idRegex)];
+        return ids.at(-1)?.[1] ?? null;
+    }
+
+    /** Partial responses carry a refreshed ViewState to use for the next call. */
+    static parsePartialViewState(body: string): string {
+        return (
+            body.match(
+                /<update id="[^"]*javax\.faces\.ViewState[^"]*"><!\[CDATA\[([^\]]+)\]\]><\/update>/
+            )?.[1] ?? ""
+        );
     }
 
     static parseGrades(body: string): any[] {
         const gradeRows = body.match(/<tr[^>]*>([\s\S]*?)<\/tr>/g);
         if (!gradeRows) {
-            throw new Error("Erreur: récupération des notes");
+            PageParser.fail("Erreur: récupération des notes", body);
         }
         if (gradeRows.length === 0) {
-            throw new Error("Erreur: aucune note trouvée");
+            PageParser.fail("Erreur: aucune note trouvée", body);
         }
         return gradeRows.map((row) => {
             const cells = row.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || [];
@@ -120,10 +184,10 @@ export class PageParser {
     static parseAbsences(body: string): any[] {
         const absRows = body.match(/<tr data-ri="[^>]*>([\s\S]*?)<\/tr>/g);
         if (!absRows) {
-            throw new Error("Erreur: récupération des absences");
+            PageParser.fail("Erreur: récupération des absences", body);
         }
         if (absRows.length === 0) {
-            throw new Error("Erreur: aucune absence trouvée");
+            PageParser.fail("Erreur: aucune absence trouvée", body);
         }
         return absRows.map((row) => {
             const date = (row.match(

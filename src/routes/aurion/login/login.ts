@@ -1,4 +1,5 @@
 import { SessionManager } from "../utils/session-manager";
+import { errorMessage, logger } from "../../../utils/logger";
 
 export class AurionLogin {
     private sessionManager: SessionManager;
@@ -13,8 +14,12 @@ export class AurionLogin {
         // result. Warm the home-page tokens in the background so the first
         // feature fetches after login skip the slow JSF rendering.
         await this.sessionManager.login(email, password, { force: true });
-        void this.sessionManager.fetchHomePageState().catch(() => {
+        void this.sessionManager.fetchHomePageState().catch((error) => {
             // Best effort: on failure the next request loads the tokens.
+            logger.warn(
+                { module: "aurion-login", err: errorMessage(error) },
+                "background home page warm-up failed"
+            );
         });
     }
 }

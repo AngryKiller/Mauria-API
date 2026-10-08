@@ -13,6 +13,7 @@ import {
     resolveGroup,
 } from "../utils/palantir-index";
 import { statusSchema } from "../status/route";
+import { errorMessage } from "../../../utils/logger";
 
 export async function palantirPlanningRoute(fastify: FastifyInstance) {
     fastify.post<{ Body: PalantirPlanningRequest }>(
@@ -118,7 +119,11 @@ export async function palantirPlanningRoute(fastify: FastifyInstance) {
                         // implies the password was verified when it was
                         // created.
                         await session.login(email, password);
-                    } catch {
+                    } catch (error) {
+                        request.log.warn(
+                            { err: errorMessage(error) },
+                            "palantir planning: admin login failed"
+                        );
                         return reply.callNotFound();
                     }
                     return {
@@ -185,6 +190,7 @@ export async function palantirPlanningRoute(fastify: FastifyInstance) {
                 );
                 return { success: true, data: lessons, status: getStatus() };
             } catch (error) {
+                request.log.error({ err: error }, "palantir planning failed");
                 Sentry.captureException(error);
                 return reply.status(500).send({
                     success: false,

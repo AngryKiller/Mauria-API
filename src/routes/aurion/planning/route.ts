@@ -91,6 +91,7 @@ export async function planningRoute(fastify: FastifyInstance) {
                 );
                 return { success: true, data: planning };
             } catch (error) {
+                request.log.error({ err: error }, "aurion planning failed");
                 Sentry.captureException(error);
                 return reply.status(500).send({
                     success: false,

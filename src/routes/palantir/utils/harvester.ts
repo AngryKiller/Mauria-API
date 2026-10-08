@@ -27,6 +27,9 @@ import {
     PalantirPlanningNode,
     PalantirStudent,
 } from "../../../types/palantir";
+import { errorMessage, logger } from "../../../utils/logger";
+
+const log = logger.child({ module: "palantir-harvester" });
 
 /**
  * Politeness delay between two calls of the same worker. Overridable so the
@@ -663,9 +666,13 @@ export async function harvestPlanning(
                 knownIds.add(lesson.id);
                 lessons.push(lesson);
             }
-        } catch {
+        } catch (error) {
             // Left without students and lesson ids; the next weekly
             // harvest retries.
+            log.warn(
+                { promotion: promotion.label, err: errorMessage(error) },
+                "roster pass failed"
+            );
         }
         await sleep(DELAY_MS);
     }

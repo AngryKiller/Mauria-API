@@ -157,6 +157,7 @@ export async function collesGroupRoute(fastify: FastifyInstance) {
                     group: match?.group_name ?? null,
                 };
             } catch (error) {
+                request.log.error({ err: error }, "colles failed");
                 return reply.status(500).send({
                     success: false,
                     error:

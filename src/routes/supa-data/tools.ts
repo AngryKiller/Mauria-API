@@ -35,6 +35,7 @@ export async function toolsRoute(fastify: FastifyInstance) {
                 const tools = await getTools();
                 return tools;
             } catch (error) {
+                request.log.error({ err: error }, "tools failed");
                 return reply.status(500).send({
                     success: false,
                     error:
@@ -61,7 +62,7 @@ export const getTools = async () => {
 
         return links;
     } catch (error) {
-        console.error("Error getting liens:", error);
+        // Logged by the route.
         throw error;
     }
 };

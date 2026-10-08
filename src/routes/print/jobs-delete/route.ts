@@ -48,6 +48,7 @@ export async function jobsDeleteRoute(fastify: FastifyInstance) {
                 await printClient.deleteJobs(request.body.ids);
                 return { success: true };
             } catch (error) {
+                request.log.error({ err: error }, "print jobs delete failed");
                 Sentry.captureException(error);
 
                 return reply.status(500).send({
